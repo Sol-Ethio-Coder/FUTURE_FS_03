@@ -53,7 +53,7 @@ const Contact = mongoose.model('Contact', contactSchema);
 const Booking = mongoose.model('Booking', bookingSchema);
 const Subscriber = mongoose.model('Subscriber', subscriberSchema);
 
-// ============ API ROUTES (MUST BE BEFORE ANY CATCH-ALL) ============
+// ============ API ROUTES ============
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -231,22 +231,19 @@ app.get('/admin', async (req, res) => {
     }
 });
 
-// ============ FRONTEND ROUTES (AFTER ALL API ROUTES) ============
+// ============ FRONTEND ROUTES ============
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// IMPORTANT: 404 handler for API routes - returns JSON not HTML
-app.use('/api/*', (req, res) => {
-    res.status(404).json({ error: 'API endpoint not found' });
-});
-
-// Catch-all for frontend - ONLY for non-API routes
-app.get('*', (req, res) => {
-    // Don't catch API routes - they should have been handled above
-    if (!req.path.startsWith('/api/')) {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// 404 handler for API routes - returns JSON (no wildcard path!)
+app.use((req, res) => {
+    // If it's an API route that wasn't matched, return JSON error
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
     }
+    // For all other routes, serve the frontend
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Start server
