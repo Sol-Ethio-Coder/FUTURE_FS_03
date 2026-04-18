@@ -1,6 +1,6 @@
 // ========== API CONFIGURATION ==========
-// ⚠️ IMPORTANT: Change this to your ACTUAL Render backend URL
-const API_BASE = 'https://sol-tutoring-academy.onrender.com/';  // 👈 REPLACE THIS!
+// ✅ Using your confirmed working backend URL
+const API_BASE = 'https://sol-tutoring-academy.onrender.com';
 const USE_BACKEND = true;
 
 // ========== MOBILE MENU TOGGLE ==========
@@ -57,25 +57,16 @@ if (contactForm) {
         submitBtn.disabled = true;
         
         try {
-            let response;
-            let result;
+            // Use backend API
+            const response = await fetch(`${API_BASE}/api/contact`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(formData)
+            });
             
-            if (USE_BACKEND) {
-                // Use backend API
-                response = await fetch(`${API_BASE}/api/contact`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(formData)
-                });
-                result = await response.json();
-            } else {
-                // Mock successful submission for demo
-                await new Promise(resolve => setTimeout(resolve, 500));
-                response = { ok: true };
-                result = { message: '✅ Demo: Message received! (Backend coming soon)' };
-            }
+            const result = await response.json();
             
             if (response.ok) {
                 formMessage.className = 'form-message success';
@@ -118,25 +109,15 @@ if (newsletterForm) {
         submitBtn.disabled = true;
         
         try {
-            let response;
-            let result;
+            const response = await fetch(`${API_BASE}/api/subscribe`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email })
+            });
             
-            if (USE_BACKEND) {
-                // Use backend API
-                response = await fetch(`${API_BASE}/api/subscribe`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ email })
-                });
-                result = await response.json();
-            } else {
-                // Mock successful subscription for demo
-                await new Promise(resolve => setTimeout(resolve, 500));
-                response = { ok: true };
-                result = { message: '✅ Demo: Subscribed! (Backend coming soon)' };
-            }
+            const result = await response.json();
             
             if (response.ok) {
                 newsletterMessage.innerHTML = `<p style="color: #28a745; margin-top: 10px;">✓ ${result.message}</p>`;
@@ -158,79 +139,16 @@ if (newsletterForm) {
     });
 }
 
-// ========== HERO SECTION SUBSCRIBE FORM ==========
-const heroForm = document.getElementById('heroSubscribeForm');
-const heroMessage = document.getElementById('heroMessage');
-
-if (heroForm) {
-    heroForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const email = document.getElementById('heroEmail').value;
-        const button = heroForm.querySelector('button');
-        const originalText = button.innerHTML;
-        
-        button.innerHTML = 'Sending...';
-        button.disabled = true;
-        
-        try {
-            let response;
-            let result;
-            
-            if (USE_BACKEND) {
-                // Use backend API
-                response = await fetch(`${API_BASE}/api/subscribe`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ email })
-                });
-                result = await response.json();
-            } else {
-                // Mock successful subscription for demo
-                await new Promise(resolve => setTimeout(resolve, 500));
-                response = { ok: true };
-                result = { message: '✅ Demo: Subscribed! (Backend coming soon)' };
-            }
-            
-            if (response.ok) {
-                heroMessage.className = 'hero-message success';
-                heroMessage.innerHTML = '✅ ' + result.message + '! We\'ll send your free trial info.';
-                heroForm.reset();
-            } else {
-                heroMessage.className = 'hero-message error';
-                heroMessage.innerHTML = '❌ ' + (result.error || 'Email already subscribed!');
-            }
-        } catch (error) {
-            console.error('Hero subscribe error:', error);
-            heroMessage.className = 'hero-message error';
-            heroMessage.innerHTML = '❌ Network error. Please try again.';
-        } finally {
-            button.innerHTML = originalText;
-            button.disabled = false;
-            
-            setTimeout(() => {
-                heroMessage.className = 'hero-message';
-            }, 5000);
-        }
-    });
-}
-
 // ========== HEALTH CHECK ==========
 async function checkServerHealth() {
-    if (!USE_BACKEND) {
-        console.log('Backend disabled - running in demo mode');
-        return;
-    }
-    
     try {
         const response = await fetch(`${API_BASE}/api/health`);
         const data = await response.json();
         console.log('✅ Server status:', data.status);
         console.log('💾 Database:', data.database);
+        console.log('🔗 Connected to:', API_BASE);
     } catch (error) {
-        console.log('⚠️ Server not reachable - make sure backend is running');
+        console.error('⚠️ Server not reachable:', error.message);
     }
 }
 
@@ -238,7 +156,6 @@ async function checkServerHealth() {
 checkServerHealth();
 
 // ========== SCROLL EFFECTS ==========
-// Navbar scroll effect
 window.addEventListener('scroll', function() {
     const navbar = document.querySelector('.navbar');
     if (navbar) {
@@ -250,7 +167,7 @@ window.addEventListener('scroll', function() {
     }
 });
 
-// Active link highlighting based on scroll position
+// Active link highlighting
 const sections = document.querySelectorAll('section');
 const navLinks = document.querySelectorAll('.nav-link');
 
@@ -287,7 +204,6 @@ const observer = new IntersectionObserver((entries) => {
     });
 }, observerOptions);
 
-// Animate service cards, testimonial cards, and stat cards
 document.querySelectorAll('.service-card, .testimonial-card, .stat-card').forEach(el => {
     el.style.opacity = '0';
     el.style.transform = 'translateY(30px)';
@@ -304,4 +220,4 @@ if (logo) {
 }
 
 console.log('✅ Sol Tutoring Academy frontend loaded!');
-console.log(`🔧 Backend mode: ${USE_BACKEND ? 'Connected to ' + API_BASE : 'Demo mode (no backend)'}`);
+console.log(`🔗 Backend API: ${API_BASE}`);
