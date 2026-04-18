@@ -65,24 +65,27 @@ app.get('/api/health', (req, res) => {
 });
 
 // Submit contact form
+// ========== CONTACT FORM API ==========
 app.post('/api/contact', async (req, res) => {
     try {
         const { name, email, phone, service, message } = req.body;
-        
+
+        // Simple validation
         if (!name || !email || !phone || !service || !message) {
             return res.status(400).json({ error: 'All fields are required' });
         }
-        
-        const newContact = new Contact({ name, email, phone, service, message });
-        await newContact.save();
-        
-        res.status(201).json({ 
-            success: true, 
-            message: 'Message sent successfully! We will contact you within 24 hours.'
+
+        // Save to MongoDB (if you have a Contact model)
+        // const newContact = new Contact({ name, email, phone, service, message });
+        // await newContact.save();
+
+        res.status(201).json({
+            success: true,
+            message: 'Message received! We will contact you soon.'
         });
     } catch (error) {
         console.error('Contact error:', error);
-        res.status(500).json({ error: 'Server error. Please try again.' });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
