@@ -1,177 +1,307 @@
-require('dotenv').config();
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const path = require('path');
+// ========== API CONFIGURATION ==========
+// ⚠️ IMPORTANT: Change this to your ACTUAL Render backend URL
+const API_BASE = 'https://sol-tutoring-academy.onrender.com/';  // 👈 REPLACE THIS!
+const USE_BACKEND = true;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// ========== MOBILE MENU TOGGLE ==========
+const navToggle = document.getElementById('navToggle');
+const navMenu = document.getElementById('navMenu');
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
-
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-    console.error('❌ ERROR: MONGODB_URI not defined');
-    process.exit(1);
+if (navToggle) {
+    navToggle.addEventListener('click', () => {
+        navMenu.classList.toggle('active');
+    });
 }
 
-mongoose.connect(MONGODB_URI)
-    .then(() => console.log('✅ MongoDB connected'))
-    .catch(err => console.error('❌ MongoDB error:', err.message));
-
-// ========== SCHEMAS ==========
-const contactSchema = new mongoose.Schema({
-    name: String,
-    email: String,
-    phone: String,
-    service: String,
-    message: String,
-    status: { type: String, default: 'pending' },
-    createdAt: { type: Date, default: Date.now }
+// Close mobile menu when clicking a link
+document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', () => {
+        navMenu.classList.remove('active');
+    });
 });
 
-const subscriberSchema = new mongoose.Schema({
-    email: { type: String, unique: true },
-    subscribedAt: { type: Date, default: Date.now }
-});
-
-const Contact = mongoose.model('Contact', contactSchema);
-const Subscriber = mongoose.model('Subscriber', subscriberSchema);
-
-// ========== API ROUTES (MUST BE BEFORE CATCH-ALL) ==========
-
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', timestamp: new Date() });
-});
-
-// Contact form
-app.post('/api/contact', async (req, res) => {
-    try {
-        const { name, email, phone, service, message } = req.body;
-        
-        if (!name || !email || !phone || !service || !message) {
-            return res.status(400).json({ error: 'All fields required' });
+// ========== SMOOTH SCROLLING ==========
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+            target.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
         }
-        
-        const contact = new Contact({ name, email, phone, service, message });
-        await contact.save();
-        
-        res.json({ success: true, message: 'Message sent successfully!' });
-    } catch (error) {
-        console.error('Contact error:', error);
-        res.status(500).json({ error: 'Server error' });
-    }
+    });
 });
 
-// Newsletter subscribe
-app.post('/api/subscribe', async (req, res) => {
-    try {
-        const { email } = req.body;
+// ========== CONTACT FORM SUBMISSION ==========
+const contactForm = document.getElementById('contactForm');
+const formMessage = document.getElementById('formMessage');
+
+if (contactForm) {
+    contactForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
         
-        if (!email) {
-            return res.status(400).json({ error: 'Email required' });
+        const formData = {
+            name: document.getElementById('name').value,
+            email: document.getElementById('email').value,
+            phone: document.getElementById('phone').value,
+            service: document.getElementById('service').value,
+            message: document.getElementById('message').value
+        };
+        
+        // Show loading state
+        const submitBtn = contactForm.querySelector('button[type="submit"]');
+        const originalText = submitBtn.textContent;
+        submitBtn.textContent = 'Sending...';
+        submitBtn.disabled = true;
+        
+        try {
+            let response;
+            let result;
+            
+            if (USE_BACKEND) {
+                // Use backend API
+                response = await fetch(`${API_BASE}/api/contact`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                result = await response.json();
+            } else {
+                // Mock successful submission for demo
+                await new Promise(resolve => setTimeout(resolve, 500));
+                response = { ok: true };
+                result = { message: '✅ Demo: Message received! (Backend coming soon)' };
+            }
+            
+            if (response.ok) {
+                formMessage.className = 'form-message success';
+                formMessage.textContent = result.message || 'Message sent successfully! We will contact you within 24 hours.';
+                contactForm.reset();
+            } else {
+                formMessage.className = 'form-message error';
+                formMessage.textContent = result.error || 'Something went wrong. Please try again.';
+            }
+        } catch (error) {
+            console.error('Contact form error:', error);
+            formMessage.className = 'form-message error';
+            formMessage.textContent = 'Network error. Please check your connection.';
+        } finally {
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+            
+            // Hide message after 5 seconds
+            setTimeout(() => {
+                formMessage.className = 'form-message';
+            }, 5000);
         }
+    });
+}
+
+// ========== NEWSLETTER SUBSCRIPTION ==========
+const newsletterForm = document.getElementById('newsletterForm');
+const newsletterMessage = document.getElementById('newsletterMessage');
+
+if (newsletterForm) {
+    newsletterForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
         
-        const existing = await Subscriber.findOne({ email });
-        if (existing) {
-            return res.status(400).json({ error: 'Already subscribed' });
+        const email = document.getElementById('newsletterEmail').value;
+        const submitBtn = newsletterForm.querySelector('button');
+        const originalText = submitBtn.innerHTML;
+        
+        // Show loading state
+        submitBtn.innerHTML = '<span>Subscribing</span><span class="btn-icon">⏳</span>';
+        submitBtn.disabled = true;
+        
+        try {
+            let response;
+            let result;
+            
+            if (USE_BACKEND) {
+                // Use backend API
+                response = await fetch(`${API_BASE}/api/subscribe`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email })
+                });
+                result = await response.json();
+            } else {
+                // Mock successful subscription for demo
+                await new Promise(resolve => setTimeout(resolve, 500));
+                response = { ok: true };
+                result = { message: '✅ Demo: Subscribed! (Backend coming soon)' };
+            }
+            
+            if (response.ok) {
+                newsletterMessage.innerHTML = `<p style="color: #28a745; margin-top: 10px;">✓ ${result.message}</p>`;
+                newsletterForm.reset();
+            } else {
+                newsletterMessage.innerHTML = `<p style="color: #dc3545; margin-top: 10px;">✗ ${result.error || 'Subscription failed. Please try again.'}</p>`;
+            }
+        } catch (error) {
+            console.error('Newsletter error:', error);
+            newsletterMessage.innerHTML = '<p style="color: #dc3545; margin-top: 10px;">✗ Network error. Please try again.</p>';
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            
+            setTimeout(() => {
+                newsletterMessage.innerHTML = '';
+            }, 5000);
         }
+    });
+}
+
+// ========== HERO SECTION SUBSCRIBE FORM ==========
+const heroForm = document.getElementById('heroSubscribeForm');
+const heroMessage = document.getElementById('heroMessage');
+
+if (heroForm) {
+    heroForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
         
-        await Subscriber.create({ email });
-        res.json({ success: true, message: 'Subscribed successfully!' });
-    } catch (error) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Get contacts (admin)
-app.get('/api/contacts', async (req, res) => {
-    try {
-        const contacts = await Contact.find().sort({ createdAt: -1 });
-        res.json(contacts);
-    } catch (error) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Get subscribers (admin)
-app.get('/api/subscribers', async (req, res) => {
-    try {
-        const subscribers = await Subscriber.find().sort({ subscribedAt: -1 });
-        res.json(subscribers);
-    } catch (error) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Admin dashboard
-app.get('/admin', async (req, res) => {
-    try {
-        const contacts = await Contact.find().sort({ createdAt: -1 }).limit(20);
-        const subscribers = await Subscriber.find().sort({ subscribedAt: -1 }).limit(20);
+        const email = document.getElementById('heroEmail').value;
+        const button = heroForm.querySelector('button');
+        const originalText = button.innerHTML;
         
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Admin Dashboard</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <style>
-                    body { font-family: Arial; padding: 20px; background: #f5f5f5; }
-                    h1 { color: #0f3460; }
-                    .section { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
-                    table { width: 100%; border-collapse: collapse; }
-                    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-                    th { background: #0f3460; color: white; }
-                </style>
-            </head>
-            <body>
-                <h1>📊 Sol Academy Admin Dashboard</h1>
-                <div class="section">
-                    <h2>Contacts (${contacts.length})</h2>
-                    <table>
-                        <tr><th>Name</th><th>Email</th><th>Service</th><th>Date</th></tr>
-                        ${contacts.map(c => `<tr><td>${c.name}</td><td>${c.email}</td><td>${c.service}</td><td>${new Date(c.createdAt).toLocaleDateString()}</td></tr>`).join('')}
-                    </table>
-                </div>
-                <div class="section">
-                    <h2>Subscribers (${subscribers.length})</h2>
-                    <table>
-                        <tr><th>Email</th><th>Date</th></tr>
-                        ${subscribers.map(s => `<tr><td>${s.email}</td><td>${new Date(s.subscribedAt).toLocaleDateString()}</td></tr>`).join('')}
-                    </table>
-                </div>
-            </body>
-            </html>
-        `);
+        button.innerHTML = 'Sending...';
+        button.disabled = true;
+        
+        try {
+            let response;
+            let result;
+            
+            if (USE_BACKEND) {
+                // Use backend API
+                response = await fetch(`${API_BASE}/api/subscribe`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email })
+                });
+                result = await response.json();
+            } else {
+                // Mock successful subscription for demo
+                await new Promise(resolve => setTimeout(resolve, 500));
+                response = { ok: true };
+                result = { message: '✅ Demo: Subscribed! (Backend coming soon)' };
+            }
+            
+            if (response.ok) {
+                heroMessage.className = 'hero-message success';
+                heroMessage.innerHTML = '✅ ' + result.message + '! We\'ll send your free trial info.';
+                heroForm.reset();
+            } else {
+                heroMessage.className = 'hero-message error';
+                heroMessage.innerHTML = '❌ ' + (result.error || 'Email already subscribed!');
+            }
+        } catch (error) {
+            console.error('Hero subscribe error:', error);
+            heroMessage.className = 'hero-message error';
+            heroMessage.innerHTML = '❌ Network error. Please try again.';
+        } finally {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            
+            setTimeout(() => {
+                heroMessage.className = 'hero-message';
+            }, 5000);
+        }
+    });
+}
+
+// ========== HEALTH CHECK ==========
+async function checkServerHealth() {
+    if (!USE_BACKEND) {
+        console.log('Backend disabled - running in demo mode');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/health`);
+        const data = await response.json();
+        console.log('✅ Server status:', data.status);
+        console.log('💾 Database:', data.database);
     } catch (error) {
-        res.status(500).send('Error loading dashboard');
+        console.log('⚠️ Server not reachable - make sure backend is running');
+    }
+}
+
+// Run health check on page load
+checkServerHealth();
+
+// ========== SCROLL EFFECTS ==========
+// Navbar scroll effect
+window.addEventListener('scroll', function() {
+    const navbar = document.querySelector('.navbar');
+    if (navbar) {
+        if (window.scrollY > 50) {
+            navbar.classList.add('scrolled');
+        } else {
+            navbar.classList.remove('scrolled');
+        }
     }
 });
 
-// ========== FRONTEND ROUTES (AFTER API ROUTES) ==========
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// Active link highlighting based on scroll position
+const sections = document.querySelectorAll('section');
+const navLinks = document.querySelectorAll('.nav-link');
+
+window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(section => {
+        const sectionTop = section.offsetTop;
+        const sectionHeight = section.clientHeight;
+        if (scrollY >= sectionTop - 200) {
+            current = section.getAttribute('id');
+        }
+    });
+
+    navLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === `#${current}`) {
+            link.classList.add('active');
+        }
+    });
 });
 
-// 404 handler for API routes only
-app.use('/api/*', (req, res) => {
-    res.status(404).json({ error: 'API endpoint not found' });
+// ========== ANIMATION ON SCROLL ==========
+const observerOptions = {
+    threshold: 0.1,
+    rootMargin: '0px 0px -50px 0px'
+};
+
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            entry.target.style.opacity = '1';
+            entry.target.style.transform = 'translateY(0)';
+        }
+    });
+}, observerOptions);
+
+// Animate service cards, testimonial cards, and stat cards
+document.querySelectorAll('.service-card, .testimonial-card, .stat-card').forEach(el => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(30px)';
+    el.style.transition = 'all 0.6s ease';
+    observer.observe(el);
 });
 
-// Catch-all for frontend (only non-API routes)
-app.use((req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// ========== LOGO CLICK ==========
+const logo = document.querySelector('.logo');
+if (logo) {
+    logo.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+}
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📊 Admin: http://localhost:${PORT}/admin`);
-});
+console.log('✅ Sol Tutoring Academy frontend loaded!');
+console.log(`🔧 Backend mode: ${USE_BACKEND ? 'Connected to ' + API_BASE : 'Demo mode (no backend)'}`);
