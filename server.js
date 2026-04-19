@@ -13,13 +13,18 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/stca_academy';
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+    console.error('❌ ERROR: MONGODB_URI not defined');
+    process.exit(1);
+}
 
 mongoose.connect(MONGODB_URI)
-    .then(() => console.log('✅ MongoDB connected successfully'))
-    .catch(err => console.error('❌ MongoDB connection error:', err.message));
+    .then(() => console.log('✅ MongoDB connected'))
+    .catch(err => console.error('❌ MongoDB error:', err.message));
 
-// ============ SCHEMAS ============
+// ========== SCHEMAS ==========
 const contactSchema = new mongoose.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true },
@@ -30,82 +35,53 @@ const contactSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
-const bookingSchema = new mongoose.Schema({
-    studentName: { type: String, required: true },
-    parentName: { type: String, required: true },
-    parentEmail: { type: String, required: true },
-    parentPhone: { type: String, required: true },
-    service: { type: String, required: true },
-    grade: { type: String, required: true },
-    preferredDate: { type: Date, required: true },
-    preferredTime: { type: String, required: true },
-    additionalInfo: String,
-    status: { type: String, default: 'pending' },
-    createdAt: { type: Date, default: Date.now }
-});
-
 const subscriberSchema = new mongoose.Schema({
-    email: { type: String, required: true, unique: true },
+    email: { type: String, unique: true, required: true },
     subscribedAt: { type: Date, default: Date.now }
 });
 
 const Contact = mongoose.model('Contact', contactSchema);
-const Booking = mongoose.model('Booking', bookingSchema);
 const Subscriber = mongoose.model('Subscriber', subscriberSchema);
 
-// ============ API ROUTES ============
+// ========== API ROUTES (MUST BE BEFORE CATCH-ALL) ==========
 
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        database: MONGODB_URI.includes('localhost') ? 'Local MongoDB' : 'MongoDB',
-        timestamp: new Date() 
+        database: 'MongoDB Atlas',
+        timestamp: new Date()
     });
 });
 
-// Submit contact form
-// ========== CONTACT FORM API ==========
+// ✅ CONTACT FORM - POST endpoint (THIS WAS MISSING!)
 app.post('/api/contact', async (req, res) => {
     try {
         const { name, email, phone, service, message } = req.body;
-
-        // Simple validation
+        
+        console.log('📬 Received contact submission:', { name, email, service });
+        
+        // Validation
         if (!name || !email || !phone || !service || !message) {
             return res.status(400).json({ error: 'All fields are required' });
         }
-
-        // Save to MongoDB (if you have a Contact model)
-        // const newContact = new Contact({ name, email, phone, service, message });
-        // await newContact.save();
-
-        res.status(201).json({
-            success: true,
-            message: 'Message received! We will contact you soon.'
-        });
-    } catch (error) {
-        console.error('Contact error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-// Submit booking
-app.post('/api/bookings', async (req, res) => {
-    try {
-        const booking = new Booking(req.body);
-        await booking.save();
+        
+        // Save to database
+        const contact = new Contact({ name, email, phone, service, message });
+        await contact.save();
+        
+        console.log(`✅ Contact saved: ${name} (${email})`);
         res.status(201).json({ 
             success: true, 
-            message: 'Booking request submitted!',
-            bookingId: booking._id 
+            message: 'Message sent successfully! We will contact you within 24 hours.' 
         });
     } catch (error) {
-        console.error('Booking error:', error);
-        res.status(500).json({ error: 'Server error' });
+        console.error('❌ Contact error:', error);
+        res.status(500).json({ error: 'Server error. Please try again.' });
     }
 });
 
-// Subscribe to newsletter
+// Newsletter subscribe
 app.post('/api/subscribe', async (req, res) => {
     try {
         const { email } = req.body;
@@ -116,12 +92,11 @@ app.post('/api/subscribe', async (req, res) => {
         
         const existing = await Subscriber.findOne({ email });
         if (existing) {
-            return res.status(400).json({ error: 'Email already subscribed!' });
+            return res.status(400).json({ error: 'Already subscribed' });
         }
         
-        const subscriber = new Subscriber({ email });
-        await subscriber.save();
-        
+        await Subscriber.create({ email });
+        console.log(`📧 New subscriber: ${email}`);
         res.status(201).json({ success: true, message: 'Subscribed successfully!' });
     } catch (error) {
         console.error('Subscribe error:', error);
@@ -129,7 +104,7 @@ app.post('/api/subscribe', async (req, res) => {
     }
 });
 
-// Get all contacts (Admin view)
+// Get contacts (admin)
 app.get('/api/contacts', async (req, res) => {
     try {
         const contacts = await Contact.find().sort({ createdAt: -1 });
@@ -139,17 +114,7 @@ app.get('/api/contacts', async (req, res) => {
     }
 });
 
-// Get all bookings (Admin view)
-app.get('/api/bookings', async (req, res) => {
-    try {
-        const bookings = await Booking.find().sort({ createdAt: -1 });
-        res.json(bookings);
-    } catch (error) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Get all subscribers (Admin view)
+// Get subscribers (admin)
 app.get('/api/subscribers', async (req, res) => {
     try {
         const subscribers = await Subscriber.find().sort({ subscribedAt: -1 });
@@ -159,12 +124,14 @@ app.get('/api/subscribers', async (req, res) => {
     }
 });
 
-// ============ ADMIN DASHBOARD ============
+// Admin dashboard - IMPROVED VERSION
 app.get('/admin', async (req, res) => {
     try {
-        const contacts = await Contact.find().sort({ createdAt: -1 }).limit(10);
-        const bookings = await Booking.find().sort({ createdAt: -1 }).limit(10);
-        const subscribers = await Subscriber.find().sort({ subscribedAt: -1 }).limit(10);
+        // Fetch contacts (NO filters, just get all)
+        const contacts = await Contact.find({}).sort({ createdAt: -1 }).limit(50);
+        const subscribers = await Subscriber.find({}).sort({ subscribedAt: -1 }).limit(50);
+        
+        console.log(`📊 Admin dashboard loaded: ${contacts.length} contacts, ${subscribers.length} subscribers`);
         
         res.send(`
             <!DOCTYPE html>
@@ -174,78 +141,142 @@ app.get('/admin', async (req, res) => {
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body { font-family: 'Segoe UI', Arial; padding: 20px; background: #f5f5f5; }
-                    h1 { color: #0f3460; margin-bottom: 20px; }
-                    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; }
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; padding: 20px; }
+                    .container { max-width: 1200px; margin: 0 auto; }
+                    h1 { color: #0f3460; margin-bottom: 10px; }
+                    .subtitle { color: #666; margin-bottom: 30px; }
+                    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
                     .stat-card { background: linear-gradient(135deg, #0f3460, #16213e); color: white; padding: 20px; border-radius: 15px; text-align: center; }
                     .stat-number { font-size: 2rem; font-weight: bold; color: #f9a826; }
-                    .section { background: white; padding: 20px; border-radius: 10px; margin-bottom: 30px; overflow-x: auto; }
-                    .section h2 { color: #0f3460; margin-bottom: 15px; border-bottom: 2px solid #f9a826; padding-bottom: 10px; }
+                    .stat-label { font-size: 0.9rem; opacity: 0.9; }
+                    .section { background: white; padding: 20px; border-radius: 15px; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    .section h2 { color: #0f3460; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #f9a826; }
                     table { width: 100%; border-collapse: collapse; }
-                    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-                    th { background: #0f3460; color: white; }
+                    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                    th { background: #0f3460; color: white; font-weight: 600; }
                     tr:hover { background: #f8f9fa; }
+                    .badge { display: inline-block; padding: 4px 8px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
+                    .badge-pending { background: #ffc107; color: #333; }
+                    .badge-contacted { background: #17a2b8; color: white; }
+                    .message-preview { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
                     @media (max-width: 768px) {
+                        body { padding: 10px; }
+                        th, td { padding: 8px; font-size: 12px; }
                         .stats { grid-template-columns: 1fr; }
-                        th, td { font-size: 12px; padding: 6px; }
+                        .message-preview { max-width: 100px; }
                     }
                 </style>
             </head>
             <body>
-                <h1>📊 Sol Academy Admin Dashboard</h1>
-                <div class="stats">
-                    <div class="stat-card"><div class="stat-number">${contacts.length}</div><div>Total Contacts</div></div>
-                    <div class="stat-card"><div class="stat-number">${bookings.length}</div><div>Total Bookings</div></div>
-                    <div class="stat-card"><div class="stat-number">${subscribers.length}</div><div>Subscribers</div></div>
-                </div>
-                <div class="section">
-                    <h2>📬 Recent Contacts</h2>
-                    <table>
-                        <thead><tr><th>Name</th><th>Email</th><th>Service</th><th>Date</th><th>Status</th></tr></thead>
-                        <tbody>
-                            ${contacts.map(c => `<tr><td>${c.name}</td><td>${c.email}</td><td>${c.service}</td><td>${new Date(c.createdAt).toLocaleDateString()}</td><td>${c.status}</td></tr>`).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="section">
-                    <h2>📅 Recent Bookings</h2>
-                    <table>
-                        <thead><tr><th>Student</th><th>Parent</th><th>Service</th><th>Date</th><th>Status</th></tr></thead>
-                        <tbody>
-                            ${bookings.map(b => `<tr><td>${b.studentName}</td><td>${b.parentName}</td><td>${b.service}</td><td>${new Date(b.preferredDate).toLocaleDateString()}</td><td>${b.status}</td></tr>`).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="section">
-                    <h2>✉️ Subscribers</h2>
-                    <table>
-                        <thead><tr><th>Email</th><th>Subscribed Date</th></tr></thead>
-                        <tbody>
-                            ${subscribers.map(s => `<tr><td>${s.email}</td><td>${new Date(s.subscribedAt).toLocaleDateString()}</td></tr>`).join('')}
-                        </tbody>
-                    </table>
+                <div class="container">
+                    <h1>📊 Sol Academy Admin Dashboard</h1>
+                    <p class="subtitle">Last updated: ${new Date().toLocaleString()}</p>
+                    
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number">${contacts.length}</div>
+                            <div class="stat-label">Total Contacts</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${subscribers.length}</div>
+                            <div class="stat-label">Newsletter Subscribers</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${contacts.filter(c => c.status === 'pending').length}</div>
+                            <div class="stat-label">Pending Replies</div>
+                        </div>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>📬 Contact Form Submissions</h2>
+                        ${contacts.length === 0 ? '<p style="color: #999; text-align: center;">No contacts yet. Submit a test message!</p>' : `
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Phone</th>
+                                        <th>Service</th>
+                                        <th>Message</th>
+                                        <th>Date</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${contacts.map(c => `
+                                        <tr>
+                                            <td><strong>${escapeHtml(c.name)}</strong></td>
+                                            <td><a href="mailto:${escapeHtml(c.email)}" style="color: #0f3460;">${escapeHtml(c.email)}</a></td>
+                                            <td>${escapeHtml(c.phone)}</td>
+                                            <td>${escapeHtml(c.service)}</td>
+                                            <td class="message-preview" title="${escapeHtml(c.message)}">${escapeHtml(c.message.substring(0, 60))}${c.message.length > 60 ? '...' : ''}</td>
+                                            <td>${new Date(c.createdAt).toLocaleString()}</td>
+                                            <td><span class="badge badge-${c.status}">${c.status}</span></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        `}
+                    </div>
+                    
+                    <div class="section">
+                        <h2>✉️ Newsletter Subscribers</h2>
+                        ${subscribers.length === 0 ? '<p style="color: #999; text-align: center;">No subscribers yet. Add a test email!</p>' : `
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr><th>Email</th><th>Subscribed Date</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${subscribers.map(s => `
+                                        <tr>
+                                            <td><a href="mailto:${escapeHtml(s.email)}" style="color: #0f3460;">${escapeHtml(s.email)}</a></td>
+                                            <td>${new Date(s.subscribedAt).toLocaleString()}</td>
+                                            <td><span class="badge badge-contacted">Active</span></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        `}
+                    </div>
                 </div>
             </body>
             </html>
         `);
     } catch (error) {
-        console.error('Admin error:', error);
-        res.status(500).send('Error loading admin dashboard');
+        console.error('Admin dashboard error:', error);
+        res.status(500).send(`
+            <h1>Error Loading Dashboard</h1>
+            <p>${error.message}</p>
+            <pre>${error.stack}</pre>
+        `);
     }
 });
 
-// ============ FRONTEND ROUTES ============
+// Helper function to escape HTML
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// ========== FRONTEND ROUTES ==========
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// 404 handler for API routes - returns JSON (no wildcard path!)
+// 404 handler for API routes (must be AFTER all API routes)
 app.use((req, res) => {
-    // If it's an API route that wasn't matched, return JSON error
     if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: 'API endpoint not found' });
     }
-    // For all other routes, serve the frontend
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -254,9 +285,199 @@ app.listen(PORT, () => {
     console.log(`
     ════════════════════════════════════════
     🚀 Server running on http://localhost:${PORT}
-    📊 Admin dashboard: http://localhost:${PORT}/admin
-    💾 Database: ${MONGODB_URI.includes('localhost') ? 'Local MongoDB' : 'MongoDB Atlas'}
-    ✅ Health check: http://localhost:${PORT}/api/health
+    📊 Admin: http://localhost:${PORT}/admin
+    ✅ POST /api/contact is ACTIVE
+    ════════════════════════════════════════
+    `);
+});require('dotenv').config();
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const path = require('path');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
+
+// MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+    console.error('❌ ERROR: MONGODB_URI not defined');
+    process.exit(1);
+}
+
+mongoose.connect(MONGODB_URI)
+    .then(() => console.log('✅ MongoDB connected'))
+    .catch(err => console.error('❌ MongoDB error:', err.message));
+
+// ========== SCHEMAS ==========
+const contactSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    phone: { type: String, required: true },
+    service: { type: String, required: true },
+    message: { type: String, required: true },
+    status: { type: String, default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const subscriberSchema = new mongoose.Schema({
+    email: { type: String, unique: true, required: true },
+    subscribedAt: { type: Date, default: Date.now }
+});
+
+const Contact = mongoose.model('Contact', contactSchema);
+const Subscriber = mongoose.model('Subscriber', subscriberSchema);
+
+// ========== API ROUTES (MUST BE BEFORE CATCH-ALL) ==========
+
+// Health check
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        database: 'MongoDB Atlas',
+        timestamp: new Date()
+    });
+});
+
+// ✅ CONTACT FORM - POST endpoint (THIS WAS MISSING!)
+app.post('/api/contact', async (req, res) => {
+    try {
+        const { name, email, phone, service, message } = req.body;
+        
+        console.log('📬 Received contact submission:', { name, email, service });
+        
+        // Validation
+        if (!name || !email || !phone || !service || !message) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+        
+        // Save to database
+        const contact = new Contact({ name, email, phone, service, message });
+        await contact.save();
+        
+        console.log(`✅ Contact saved: ${name} (${email})`);
+        res.status(201).json({ 
+            success: true, 
+            message: 'Message sent successfully! We will contact you within 24 hours.' 
+        });
+    } catch (error) {
+        console.error('❌ Contact error:', error);
+        res.status(500).json({ error: 'Server error. Please try again.' });
+    }
+});
+
+// Newsletter subscribe
+app.post('/api/subscribe', async (req, res) => {
+    try {
+        const { email } = req.body;
+        
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+        
+        const existing = await Subscriber.findOne({ email });
+        if (existing) {
+            return res.status(400).json({ error: 'Already subscribed' });
+        }
+        
+        await Subscriber.create({ email });
+        console.log(`📧 New subscriber: ${email}`);
+        res.status(201).json({ success: true, message: 'Subscribed successfully!' });
+    } catch (error) {
+        console.error('Subscribe error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get contacts (admin)
+app.get('/api/contacts', async (req, res) => {
+    try {
+        const contacts = await Contact.find().sort({ createdAt: -1 });
+        res.json(contacts);
+    } catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get subscribers (admin)
+app.get('/api/subscribers', async (req, res) => {
+    try {
+        const subscribers = await Subscriber.find().sort({ subscribedAt: -1 });
+        res.json(subscribers);
+    } catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Admin dashboard
+app.get('/admin', async (req, res) => {
+    try {
+        const contacts = await Contact.find().sort({ createdAt: -1 }).limit(20);
+        const subscribers = await Subscriber.find().sort({ subscribedAt: -1 }).limit(20);
+        
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Admin Dashboard - Sol Academy</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+                    h1 { color: #0f3460; }
+                    .section { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+                    th { background: #0f3460; color: white; }
+                </style>
+            </head>
+            <body>
+                <h1>📊 Sol Academy Admin Dashboard</h1>
+                <div class="section">
+                    <h2>Contacts (${contacts.length})</h2>
+                    <table><thead><tr><th>Name</th><th>Email</th><th>Service</th><th>Date</th></tr></thead>
+                    <tbody>${contacts.map(c => `<tr><td>${c.name}</td><td>${c.email}</td><td>${c.service}</td><td>${new Date(c.createdAt).toLocaleDateString()}</td></tr>`).join('')}</tbody>
+                    </table>
+                </div>
+                <div class="section">
+                    <h2>Subscribers (${subscribers.length})</h2>
+                    <table><thead><tr><th>Email</th><th>Date</th></tr></thead>
+                    <tbody>${subscribers.map(s => `<tr><td>${s.email}</td><td>${new Date(s.subscribedAt).toLocaleDateString()}</td></tr>`).join('')}</tbody>
+                    </table>
+                </div>
+            </body>
+            </html>
+        `);
+    } catch (error) {
+        res.status(500).send('Error loading dashboard');
+    }
+});
+
+// ========== FRONTEND ROUTES ==========
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// 404 handler for API routes (must be AFTER all API routes)
+app.use((req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
+    }
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`
+    ════════════════════════════════════════
+    🚀 Server running on http://localhost:${PORT}
+    📊 Admin: http://localhost:${PORT}/admin
+    ✅ POST /api/contact is ACTIVE
     ════════════════════════════════════════
     `);
 });
